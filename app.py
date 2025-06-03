@@ -1,4 +1,4 @@
-# backend/app.py - FIXED to work like your original with refresh support
+# backend/app.py - Production ready with environment-based URLs
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import requests
@@ -8,7 +8,7 @@ import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 
-# Import enhanced AI functions from gpt_utils - FIXED IMPORTS
+# Import enhanced AI functions from gpt_utils
 from gpt_utils import (
     get_prompt_analysis,
     get_ai_powered_recommendations,
@@ -22,25 +22,27 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(16))
 
-# Configure CORS to allow credentials and specific origins - UPDATED FOR PORT 3000
+# Environment-based URLs
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://127.0.0.1:5001')
+
+# Configure CORS - Production ready
 CORS(app, 
      origins=[
          "http://localhost:3000", 
          "http://127.0.0.1:3000",
-         "https://thecratefrontend.vercel.app/",  # Will update this
-         "https://your-custom-domain.com"        # If you have one
+         "https://thecratefrontend.vercel.app",
+         FRONTEND_URL,  # Dynamic frontend URL
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "OPTIONS"])
 
-# API Keys - AI is REQUIRED for core functionality
+# API Keys
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-
-# Spotify App Credentials
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
-SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5001/auth/callback')
+SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', f'{BACKEND_URL}/auth/callback')
 
 # Spotify API endpoints
 SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize'
@@ -65,7 +67,8 @@ def index():
         'status': 'running',
         'ai_enabled': bool(OPENAI_API_KEY),
         'spotify_configured': bool(SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET),
-        'frontend_url': 'http://localhost:3000',
+        'frontend_url': FRONTEND_URL,
+        'backend_url': BACKEND_URL,
         'features': [
             'Enhanced AI prompt engineering',
             'Refresh functionality for different results',
@@ -83,7 +86,8 @@ def health_check():
         'service': 'TheCrate AI Backend v3.0',
         'ai_status': 'enabled' if OPENAI_API_KEY else 'missing - REQUIRED',
         'spotify_auth': 'configured' if SPOTIFY_CLIENT_ID else 'missing',
-        'frontend_url': 'http://localhost:3000',
+        'frontend_url': FRONTEND_URL,
+        'backend_url': BACKEND_URL,
         'ai_features': [
             'Genre archaeology',
             'Refresh functionality',
@@ -135,18 +139,18 @@ def spotify_callback():
     state = request.args.get('state')
     error = request.args.get('error')
     
-    # Handle authorization errors - UPDATED TO PORT 3000
+    # Handle authorization errors - Use environment-based frontend URL
     if error:
-        frontend_url = f"http://localhost:3000?error={error}"
+        frontend_url = f"{FRONTEND_URL}?error={error}"
         return redirect(frontend_url)
     
-    # Verify state parameter for security - UPDATED TO PORT 3000
+    # Verify state parameter for security
     if not state or state != session.get('spotify_auth_state'):
-        frontend_url = "http://localhost:3000?error=invalid_state"
+        frontend_url = f"{FRONTEND_URL}?error=invalid_state"
         return redirect(frontend_url)
     
     if not code:
-        frontend_url = "http://localhost:3000?error=no_code"
+        frontend_url = f"{FRONTEND_URL}?error=no_code"
         return redirect(frontend_url)
     
     # Exchange authorization code for access token
@@ -170,7 +174,7 @@ def spotify_callback():
         
         if response.status_code != 200:
             print(f"Token exchange failed: {response.status_code} - {response.text}")
-            frontend_url = "http://localhost:3000?error=token_exchange_failed"
+            frontend_url = f"{FRONTEND_URL}?error=token_exchange_failed"
             return redirect(frontend_url)
         
         token_info = response.json()
@@ -178,13 +182,13 @@ def spotify_callback():
         
         session.pop('spotify_auth_state', None)
         
-        # Redirect back to frontend with token - UPDATED TO PORT 3000
-        frontend_url = f"http://localhost:3000?access_token={access_token}"
+        # Redirect back to frontend with token - Use environment-based URL
+        frontend_url = f"{FRONTEND_URL}?access_token={access_token}"
         return redirect(frontend_url)
         
     except Exception as e:
         print(f"Error during token exchange: {e}")
-        frontend_url = "http://localhost:3000?error=server_error"
+        frontend_url = f"{FRONTEND_URL}?error=server_error"
         return redirect(frontend_url)
 
 @app.route('/analyze-prompt', methods=['POST'])
@@ -229,7 +233,7 @@ def get_recommendations():
             return jsonify({'error': 'No JSON data provided'}), 400
             
         prompt = data.get('prompt', '').strip()
-        refresh_seed = data.get('refresh_seed')  # NEW: For refresh functionality
+        refresh_seed = data.get('refresh_seed')  # For refresh functionality
         
         if not prompt:
             return jsonify({'error': 'No prompt provided'}), 400
@@ -267,7 +271,7 @@ def get_ai_powered_recommendations_wrapper(prompt, refresh_seed=None):
         # Step 1 & 2: Get enhanced AI analysis and search queries using gpt_utils
         print("🔍 Step 1-2: Enhanced AI analysis and query generation...")
         
-        # FIXED: Properly handle the 3 return values
+        # Properly handle the 3 return values
         analysis, search_queries, used_seed = get_ai_powered_recommendations(prompt, refresh_seed)
         
         # Step 3: Search Spotify with AI-generated queries
@@ -285,20 +289,19 @@ def get_ai_powered_recommendations_wrapper(prompt, refresh_seed=None):
         print(f"   Found {len(all_tracks)} tracks from {successful_searches} successful searches")
         
         if not all_tracks:
-            # Return your original format even when no results
+            # Return empty array when no results
             return []
         
         # Step 4: Enhanced AI-powered filtering and ranking
         print("🧠 Step 4: Enhanced AI filtering and ranking results...")
         filtered_tracks = ai_filter_and_rank_tracks(all_tracks, prompt, analysis, refresh_seed)
         
-        # IMPORTANT: Return in your original format (array of tracks)
-        # But we can add metadata for the refresh functionality if needed
+        # Return in original format (array of tracks)
         return filtered_tracks
         
     except Exception as e:
         print(f"Error in AI recommendations wrapper: {e}")
-        # Return empty array on error to match your original format
+        # Return empty array on error to match original format
         return []
 
 def search_spotify_tracks(query, limit=10):
@@ -378,7 +381,7 @@ def format_track_data(track):
         album_images = track.get('album', {}).get('images', [])
         album_cover = album_images[0]['url'] if album_images else ''
         
-        # Return in the EXACT format your frontend expects
+        # Return in the format your frontend expects
         return {
             'id': track['id'],
             'title': track['name'],
@@ -477,8 +480,8 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("🤖 TheCrate Enhanced AI-Powered Backend Starting...")
-    print(f"📱 Frontend URL: http://localhost:3000")
-    print(f"🔙 Backend URL: http://localhost:5001")
+    print(f"📱 Frontend URL: {FRONTEND_URL}")
+    print(f"🔙 Backend URL: {BACKEND_URL}")
     print(f"🔐 Spotify Redirect URI: {SPOTIFY_REDIRECT_URI}")
     print("🧠 AI Features: Enhanced prompt engineering, refresh functionality, genre archaeology, sample lineage analysis")
     
